@@ -66,48 +66,46 @@ embeddings = GoogleGenerativeAIEmbeddings(
 
 # --- Prompts ---
 interviewer_prompt = PromptTemplate(
-    input_variables=["mode", "company_name", "position", "number_of_questions", "number_of_followup"],
+    input_variables=["mode", "company_name", "position", "number_of_questions", "number_of_followup", "resume_text", "questions_text"],
     template="""
         You are an {mode} AI interviewer for a leading tech company called {company_name}, conducting an interview for a {position} position.
-        Your goal is to assess the candidate's technical skills, problem-solving abilities, communication skills, and experience relevant to data science roles.
+        Your goal is to assess the candidate's technical skills, problem-solving abilities, communication skills, and experience.
         Maintain a professional yet approachable tone.
-        You have access to two tools:
-        1. `retrieve_documents`: This tool can search a knowledge base of interview questions related to the {position} position. Use this tool to find relevant questions to ask the candidate.
-        2. `retrieve_resume`: This tool can search the candidate's resume to find information about their past projects and experience. Use this tool to ask relevant projects from their resume like {position} projects.
-        Start by introducing yourself as the interviewer and asking the candidate to introduce themselves, then ask use tools to retrive a project of you choice in there resume and ask them about it.
-        Focus on questions related to the position and the candidate's resume.
-        You ask only one Introduction question at the beginning of the interview, then one question about a project from there resume then {number_of_questions} questions about the position from the knowledge base with {number_of_followup} flowup question only if there answer was too vage and incomplete.
+        
+        Here is the candidate's Resume context:
+        ---
+        {resume_text}
+        ---
+        
+        Here is the list of technical interview questions related to this position:
+        ---
+        {questions_text}
+        ---
+        
+        Start by introducing yourself as the interviewer and asking the candidate to introduce themselves.
+        Then, ask the candidate about one of the projects or experiences from their resume.
+        After that, ask {number_of_questions} technical questions selected from the list of technical interview questions above.
+        For each technical question, you may ask up to {number_of_followup} follow-up questions only if their answer was too vague or incomplete.
+        Ask ONLY one question at a time. Wait for the candidate's response before asking the next question or follow-up.
         If asked any irrelevant question, respond with: "Sorry, this is out of scope."
-        After the interview is finished you output this sentance exacly: "Thank you, that's it for today."
-        if you use any tool print"tool used: `tool_name`"
-        when you bull a question from the knowldebase specify the number of the question, Example:
-        `
-        Question one: What challenges do LLMs face in deployment?
-        Question twe: What defines a Large Language Model (LLM)?
-        `
-        to elistrate between main questions and follow-up questions.
+        After the interview is finished, output this sentence exactly: "Thank you, that's it for today."
+        
         Begin the interview now.
         """
 )
 
 evaluator_prompt = PromptTemplate(
-    input_variables=["num_of_q", "num_of_follow_up", "position"],
-    template="""You are an AI evaluator for a job interview. Your task is to evaluate the candidate's responses based\
-        on their relevance, clarity, and depth.
-        You will receive one Introduction question, one project question, and {num_of_q} technical questions with up to {num_of_follow_up} follow up questions\
-        about {position} position.
+    input_variables=["num_of_q", "num_of_follow_up", "position", "questions_text"],
+    template="""You are an AI evaluator for a job interview. Your task is to evaluate the candidate's responses based on their relevance, clarity, and depth.
+        You will receive one Introduction question, one project question, and {num_of_q} technical questions with up to {num_of_follow_up} follow up questions about {position} position.
+        
+        Here is the list of reference Technical Questions:
+        ---
+        {questions_text}
+        ---
+        
         Ignore any irrelevant questions or answers.
         You evaluate each response with a score from 1 to 10, where 1 is the lowest and 10 is the highest.
-        The context of the interview is as follows:
-            Introduction question:
-            Project question:
-            Technical questions:
-        each question could have a follow-up question, if so you should evaluate the main question only and assume the follow up answer is appended to the main answer.
-        Usually the main technical question is in the following format:
-            Question one: Example question one?
-            Question two: Example question two?
-        you should evaluate the main question only and assume the follow up answer is appended to the main answer.
-        If you don't have enough information to evaluate a Technical question, use the tool `retriever_tool` to get more information about the question.
         You should output the evaluation in the following format:
         Evaluation:
             1. Introduction question: [score] - [reasoning]
@@ -276,95 +274,73 @@ def pdf_generator_node(state: AgentState) -> AgentState:
         print(f"Error generating PDF: {str(e)}")
         return {"pdf_path": None}
 
+def extract_pdf_text(pdf_path):
+    if not pdf_path or not os.path.exists(pdf_path):
+        return ""
+    try:
+        loader = PyPDFLoader(pdf_path)
+        pages = loader.load()
+        return "\n".join([page.page_content for page in pages])
+    except Exception as e:
+        print(f"Error reading PDF: {e}")
+        return ""
+
 def recruiter(state: AgentState) -> AgentState:
-    # Initialize both retrievers with the paths from the state
-    resume_retriever_tool = initialize_resume_retriever(state.get("resume_path"))
-    questions_retriever_tool = initialize_questions_retriever(state.get("questions_path"))
+    # Get file paths and extract text
+    resume_file = state.get("resume_path") or DEFAULT_RESUME_PDF
+    questions_file = state.get("questions_path") or INTERVIEW_QUESTIONS_PDF
     
-    # Check if the last message is a tool call for retrieve_resume or retrieve_questions
-    if state["messages"] and isinstance(state["messages"][-1], AIMessage) and getattr(state["messages"][-1], "tool_calls", None):
-        for tool_call in state["messages"][-1].tool_calls:
-            if tool_call.get("name") == "retrieve_resume":
-                # Handle the resume retrieval directly
-                query = tool_call.get("args", {}).get("query", "")
-                print(f"Direct resume query: {query}")
-                
-                # Execute the tool manually
-                result = resume_retriever_tool.invoke({"query": query})
-                print(f"Resume retrieval result: {result[:200]}...")
-                
-                # Create a tool message with the result
-                from langchain_core.messages import ToolMessage
-                tool_message = ToolMessage(
-                    content=result,
-                    tool_call_id=tool_call.get("id", ""),
-                    name="retrieve_resume"
-                )
-                
-                # Return the tool message
-                return {"messages": tool_message}
-            
-            elif tool_call.get("name") == "retrieve_questions":
-                # Handle the questions retrieval directly
-                query = tool_call.get("args", {}).get("query", "")
-                print(f"Direct questions query: {query}")
-                
-                # Execute the tool manually
-                result = questions_retriever_tool.invoke({"query": query})
-                print(f"Questions retrieval result: {result[:200]}...")
-                
-                # Create a tool message with the result
-                from langchain_core.messages import ToolMessage
-                tool_message = ToolMessage(
-                    content=result,
-                    tool_call_id=tool_call.get("id", ""),
-                    name="retrieve_questions"
-                )
-                
-                # Return the tool message
-                return {"messages": tool_message}
-    
-    # Normal flow for non-tool messages
+    resume_text = extract_pdf_text(resume_file)
+    if not resume_text:
+        resume_text = "No resume uploaded."
+        
+    questions_text = extract_pdf_text(questions_file)
+    if not questions_text:
+        questions_text = "No questions template provided."
+        
     sys_prompt = SystemMessage(content=interviewer_prompt.format(
         mode=state['mode'],
         company_name=state['company_name'],
         position=state['position'],
         number_of_questions=state['num_of_q'],
-        number_of_followup=state['num_of_follow_up']
+        number_of_followup=state['num_of_follow_up'],
+        resume_text=resume_text,
+        questions_text=questions_text
     ))
+    
     messages = state.get("messages", [])
     if not messages:
         messages = [HumanMessage(content="Hello. Please start the interview.")]
     all_messages = [sys_prompt] + messages
-    return {"messages": llm.bind_tools([questions_retriever_tool, resume_retriever_tool]).invoke(all_messages)}
+    
+    # Direct model invoke, no tools required
+    return {"messages": llm.invoke(all_messages)}
 
 def evaluator(state: AgentState) -> AgentState:
     """
     Evaluates the interview conversation and generates an evaluation report.
     """
-    # Initialize the questions retriever with the path from the state
-    questions_retriever_tool = initialize_questions_retriever(state.get("questions_path"))
-    
-    # Create a fresh evaluation
+    questions_file = state.get("questions_path") or INTERVIEW_QUESTIONS_PDF
+    questions_text = extract_pdf_text(questions_file)
+    if not questions_text:
+        questions_text = "No questions template provided."
+        
     sys_prompt = evaluator_prompt.format(
         num_of_q=state['num_of_q'],
         num_of_follow_up=state['num_of_follow_up'],
-        position=state['position']
+        position=state['position'],
+        questions_text=questions_text
     )
     sys_message = SystemMessage(content=sys_prompt)
     all_messages = [sys_message]
     
-    # Process the conversation messages for evaluation
     for m in state["messages"]:
         if isinstance(m, HumanMessage):
             all_messages.append(HumanMessage(content=f"Candidate: {m.content}"))
         elif isinstance(m, AIMessage) and "that's it for today" not in m.content:
             all_messages.append(AIMessage(content=f"AI Recruiter: {m.content}"))
-    
-    # Generate a new evaluation
-    results = evaluator_llm.bind_tools([questions_retriever_tool]).invoke(all_messages)
-    
-    # Return the evaluation result
+            
+    results = evaluator_llm.invoke(all_messages)
     return {"evaluation_result": results.content}
 
 def report_writer(state: AgentState) -> AgentState:
