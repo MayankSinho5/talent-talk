@@ -332,7 +332,10 @@ def recruiter(state: AgentState) -> AgentState:
         number_of_questions=state['num_of_q'],
         number_of_followup=state['num_of_follow_up']
     ))
-    all_messages = [sys_prompt] + state["messages"]
+    messages = state.get("messages", [])
+    if not messages:
+        messages = [HumanMessage(content="Hello. Please start the interview.")]
+    all_messages = [sys_prompt] + messages
     return {"messages": llm.bind_tools([questions_retriever_tool, resume_retriever_tool]).invoke(all_messages)}
 
 def evaluator(state: AgentState) -> AgentState:
