@@ -51,11 +51,11 @@ if not GOOGLE_API_KEY:
     )
 
 llm = init_chat_model(
-    "google_genai:gemini-2.5-flash-lite-preview-06-17",
+    "google_genai:gemini-flash-latest",
     google_api_key=GOOGLE_API_KEY,
 )
 evaluator_llm = init_chat_model(
-    "google_genai:gemini-2.5-flash-lite-preview-06-17",
+    "google_genai:gemini-flash-latest",
     temperature=0.0,
     google_api_key=GOOGLE_API_KEY,
 )
