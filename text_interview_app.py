@@ -3,54 +3,162 @@ from src.dynamic_workflow import build_workflow, AgentState
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage, BaseMessage
 import os
 import json
-import pprint
 
-st.set_page_config(page_title="Talent Talk", layout="wide")
-st.title("Talent Talk")
-st.markdown("*AI-powered technical interviews with dynamic resume analysis*")
+# --- Page Config & Styling ---
+st.set_page_config(page_title="Talent Talk - AI Interviewer", layout="wide", page_icon="🤖")
 
-# Function to display the app state
-def display_app_state():
-    """Display the current application state in a simple way"""
-    with st.expander("App State", expanded=False):
-        # Convert messages to strings for display
-        state_copy = dict(st.session_state.state)
-        
-        # Handle messages separately
-        if "messages" in state_copy:
-            messages_str = []
-            for i, msg in enumerate(state_copy["messages"]):
-                msg_type = type(msg).__name__
-                if hasattr(msg, "content"):
-                    content = f"{msg_type}: {msg.content}"
-                else:
-                    content = f"{msg_type}: {str(msg)}"
-                messages_str.append(content)
-            
-            # Replace messages with string representation
-            state_copy["messages"] = messages_str
-        
-        # Display the state
-        st.code(str(state_copy), language="python")
+# Inject premium custom CSS
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
-# --- Sidebar: Interview Setup ---
-st.sidebar.header("Interview Setup")
+/* Main App Layout */
+html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+    font-family: 'Outfit', sans-serif;
+    background-color: #0B0F19;
+    color: #F3F4F6;
+}
 
-# Get current values from session state if available
+/* Sidebar Custom Styling */
+[data-testid="stSidebar"] {
+    background-color: #111827 !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Headings and Titles */
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+.main-title {
+    font-size: 3rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #6366F1 0%, #A855F7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0px;
+}
+
+.subtitle {
+    color: #9CA3AF;
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+    font-weight: 300;
+}
+
+/* Chat Input Bar Adjustments */
+[data-testid="stChatInput"] {
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background-color: #1F2937 !important;
+}
+
+/* Expander Glassmorphism */
+.streamlit-expanderHeader {
+    background-color: rgba(31, 41, 55, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border-radius: 8px !important;
+    color: #E5E7EB !important;
+}
+
+/* Buttons */
+.stButton>button {
+    background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 0.5rem 1.5rem;
+    transition: all 0.2s ease;
+}
+
+.stButton>button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+}
+
+/* Dynamic Stepper Styles */
+.stepper-container {
+    background: rgba(17, 24, 39, 0.7);
+    padding: 1.25rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 1.5rem;
+    backdrop-filter: blur(10px);
+}
+
+.step-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+}
+
+.step-dot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: bold;
+    background-color: #374151;
+    color: #9CA3AF;
+    transition: all 0.3s ease;
+}
+
+.step-dot.active {
+    background-color: #6366F1;
+    color: white;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}
+
+.step-dot.completed {
+    background-color: #10B981;
+    color: white;
+}
+
+.step-text {
+    font-size: 14px;
+    color: #9CA3AF;
+    font-weight: 400;
+}
+
+.step-text.active {
+    color: #F9FAFB;
+    font-weight: 600;
+}
+
+.step-text.completed {
+    color: #6B7280;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Main Title Headers
+st.markdown('<h1 class="main-title">Talent Talk</h1>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">AI-powered technical interviews with dynamic resume analysis</p>', unsafe_allow_html=True)
+
+# --- Sidebar: Setup & Configuration ---
+st.sidebar.header("⚙️ Configuration")
+
+# Setup default values
 current_mode = st.session_state.state.get("mode", "friendly") if "state" in st.session_state else "friendly"
 current_position = st.session_state.state.get("position", "AI Developer") if "state" in st.session_state else "AI Developer"
 current_company = st.session_state.state.get("company_name", "Tech Innovators Inc.") if "state" in st.session_state else "Tech Innovators Inc."
 current_num_q = st.session_state.state.get("num_of_q", 2) if "state" in st.session_state else 2
 current_num_follow = st.session_state.state.get("num_of_follow_up", 1) if "state" in st.session_state else 1
 
-# Interview configuration
+# Setup Form
 mode = st.sidebar.selectbox("Interviewer Mode", ["friendly", "formal", "technical"], index=["friendly", "formal", "technical"].index(current_mode))
 position = st.sidebar.text_input("Position", value=current_position)
 company = st.sidebar.text_input("Company Name", value=current_company)
 num_of_q = st.sidebar.number_input("Number of Technical Questions", min_value=1, max_value=10, value=current_num_q)
 num_of_follow_up = st.sidebar.number_input("Number of Follow-up Questions", min_value=0, max_value=3, value=current_num_follow)
 
-# Button to update interview parameters
 params_changed = (
     "state" in st.session_state and (
         mode != st.session_state.state.get("mode") or
@@ -62,22 +170,21 @@ params_changed = (
 )
 
 if params_changed:
-    st.sidebar.warning("Interview parameters have changed. Click 'Update Parameters' to apply changes.")
+    st.sidebar.warning("Parameters changed. Click below to apply.")
     
-update_params = st.sidebar.button("Update Parameters")
-if update_params and "state" in st.session_state:
+if st.sidebar.button("Update Parameters") and "state" in st.session_state:
     st.session_state.state["mode"] = mode
     st.session_state.state["position"] = position
     st.session_state.state["company_name"] = company
     st.session_state.state["num_of_q"] = num_of_q
     st.session_state.state["num_of_follow_up"] = num_of_follow_up
-    st.sidebar.success("Interview parameters updated!")
+    st.sidebar.success("Parameters updated!")
+    st.rerun()
 
-# File uploads section
-st.sidebar.header("Upload Files")
+st.sidebar.markdown("---")
+st.sidebar.header("📁 Document Uploads")
 
-# Resume upload
-st.sidebar.subheader("Candidate Resume")
+# Resume Upload
 resume_file = st.sidebar.file_uploader("Upload Resume (PDF)", type=["pdf"], key="resume_uploader")
 resume_path = None
 if resume_file:
@@ -86,11 +193,10 @@ if resume_file:
     resume_path = os.path.join(resume_dir, resume_file.name)
     with open(resume_path, "wb") as f:
         f.write(resume_file.read())
-    st.sidebar.success(f"Resume uploaded: {resume_file.name}")
+    st.sidebar.success(f"Uploaded: {resume_file.name}")
 
-# Interview questions upload
-st.sidebar.subheader("Interview Questions")
-questions_file = st.sidebar.file_uploader("Upload Questions (PDF)", type=["pdf"], key="questions_uploader")
+# Questions Upload
+questions_file = st.sidebar.file_uploader("Upload Custom Questions (PDF)", type=["pdf"], key="questions_uploader")
 questions_path = None
 if questions_file:
     questions_dir = "./uploaded_questions"
@@ -98,14 +204,79 @@ if questions_file:
     questions_path = os.path.join(questions_dir, questions_file.name)
     with open(questions_path, "wb") as f:
         f.write(questions_file.read())
-    st.sidebar.success(f"Questions uploaded: {questions_file.name}")
+    st.sidebar.success(f"Uploaded: {questions_file.name}")
 
-# --- Initialize workflow ---
+# --- Initialize Workflow ---
 workflow = build_workflow()
 
-# --- Session State ---
+# --- Helpers ---
+def get_current_step(messages, report_generated=False):
+    if not messages:
+        return "Setup"
+    
+    # Check if the interview has ended
+    interview_ended = False
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage) and "that's it for today" in msg.content.lower():
+            interview_ended = True
+            break
+            
+    if interview_ended:
+        return "Finished"
+        
+    # Count candidate messages
+    human_msgs = [m for m in messages if isinstance(m, HumanMessage)]
+    if len(human_msgs) == 0:
+        return "Introduction"
+    elif len(human_msgs) == 1:
+        return "Resume Review"
+    else:
+        return "Technical Round"
+
+def render_stepper(current_step):
+    steps = ["Setup", "Introduction", "Resume Review", "Technical Round", "Finished"]
+    current_idx = steps.index(current_step)
+    
+    html = '<div class="stepper-container">'
+    html += '<h4 style="margin-top:0; margin-bottom:12px; color:#F3F4F6;">Interview Progress</h4>'
+    
+    for i, step in enumerate(steps):
+        if i < current_idx:
+            dot_class = "step-dot completed"
+            text_class = "step-text completed"
+            symbol = "✓"
+        elif i == current_idx:
+            dot_class = "step-dot active"
+            text_class = "step-text active"
+            symbol = str(i+1)
+        else:
+            dot_class = "step-dot"
+            text_class = "step-text"
+            symbol = str(i+1)
+            
+        html += f'''
+        <div class="step-item">
+            <span class="{dot_class}">{symbol}</span>
+            <span class="{text_class}">{step}</span>
+        </div>
+        '''
+    html += '</div>'
+    st.sidebar.markdown(html, unsafe_allow_html=True)
+
+def display_app_state():
+    with st.sidebar.expander("🔬 Agent State Debugger", expanded=False):
+        state_copy = dict(st.session_state.state)
+        if "messages" in state_copy:
+            messages_str = []
+            for msg in state_copy["messages"]:
+                msg_type = type(msg).__name__
+                content = msg.content if hasattr(msg, "content") else str(msg)
+                messages_str.append(f"{msg_type}: {content}")
+            state_copy["messages"] = messages_str
+        st.code(str(state_copy), language="python")
+
+# --- Session State Management ---
 if "state" not in st.session_state:
-    # Initialize with empty state
     st.session_state.state = AgentState(
         mode=mode,
         num_of_q=num_of_q,
@@ -116,203 +287,156 @@ if "state" not in st.session_state:
         messages=[],
         report="",
         pdf_path=None,
-        resume_path=resume_path,  # Include the resume path in the state
-        questions_path=questions_path  # Include the questions path in the state
+        resume_path=resume_path,
+        questions_path=questions_path
     )
-# Update paths if they change
+    
+    # Auto-initialize the greeting message on first load
+    with st.spinner("Initializing recruiter agent..."):
+        try:
+            initial_result = workflow.invoke(st.session_state.state)
+            st.session_state.state["messages"] = initial_result.get("messages", [])
+        except Exception as e:
+            st.error(f"Error initializing recruiter: {str(e)}")
 else:
-    # Update resume path if it changes
+    # Update state paths
     if resume_path and st.session_state.state.get("resume_path") != resume_path:
         st.session_state.state["resume_path"] = resume_path
-        st.sidebar.info("Resume updated. The interviewer will use your new resume.")
-    
-    # Update questions path if it changes
+        st.sidebar.info("Resume updated!")
     if questions_path and st.session_state.state.get("questions_path") != questions_path:
         st.session_state.state["questions_path"] = questions_path
-        st.sidebar.info("Interview questions updated. The interviewer will use your new questions.")
+        st.sidebar.info("Questions updated!")
 
-# --- Main App: Interview Loop ---
-st.header("Interview")
-user_input = st.text_input("Your answer (as candidate):", "")
-if st.button("Send") and user_input:
-    # Add the human message to the state
-    st.session_state.state["messages"].append(HumanMessage(content=user_input))
-    
-    # Check if the last AI message contains "that's it for today" to detect end of interview
-    interview_ended = False
-    if st.session_state.state["messages"]:
-        for msg in reversed(st.session_state.state["messages"]):
-            if isinstance(msg, AIMessage) and "that's it for today" in msg.content.lower():
-                interview_ended = True
-                st.info("Interview has ended. Generating evaluation and report...")
-                break
-    
-    # Create a fresh state dictionary for the workflow
-    current_state = AgentState(
-        mode=st.session_state.state["mode"],
-        num_of_q=st.session_state.state["num_of_q"],
-        num_of_follow_up=st.session_state.state["num_of_follow_up"],
-        position=st.session_state.state["position"],
-        company_name=st.session_state.state["company_name"],
-        messages=st.session_state.state["messages"],
-        evaluation_result="" if interview_ended else st.session_state.state.get("evaluation_result", ""),
-        report="" if interview_ended else st.session_state.state.get("report", ""),
-        pdf_path=st.session_state.state.get("pdf_path"),
-        resume_path=st.session_state.state.get("resume_path"),  # Include the resume path
-        questions_path=st.session_state.state.get("questions_path")  # Include the questions path
-    )
-    
-    try:
-        # Run the workflow step
-        result = workflow.invoke(current_state)
-        
-        # Update session state with the result
-        for key, value in result.items():
-            if key == "evaluation_result" and interview_ended:
-                # Replace evaluation result at the end of interview
-                st.session_state.state["evaluation_result"] = value
-            elif key == "report" and value:
-                # Always replace the report with new content
-                st.session_state.state["report"] = value
-            elif key == "pdf_path" and value:
-                # Update PDF path when available
-                st.session_state.state["pdf_path"] = value
-            elif key == "messages":
-                # Messages are handled by add_messages
-                st.session_state.state["messages"] = value
-            else:
-                # Update other fields normally
-                st.session_state.state[key] = value
-                
-    except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
-        import traceback
-        st.error(traceback.format_exc())
+# Render Progress Stepper
+current_step = get_current_step(st.session_state.state["messages"])
+render_stepper(current_step)
 
-# --- Display Transcript ---
-st.subheader("Transcript")
+# --- Main App: Chat UI ---
+st.subheader("💬 Interview Session")
+
+# Render active chat messages
 for m in st.session_state.state["messages"]:
     if isinstance(m, HumanMessage):
-        st.markdown(f"**Candidate:** {m.content}")
+        with st.chat_message("user", avatar="👨‍💻"):
+            st.write(m.content)
     elif isinstance(m, AIMessage):
-        st.markdown(f"**AI Recruiter:** {m.content}")
+        with st.chat_message("assistant", avatar="🤖"):
+            st.write(m.content)
 
-# Check if interview has ended but evaluation hasn't been generated
+# Detect if the interview has ended
 interview_ended = False
 for msg in reversed(st.session_state.state.get("messages", [])):
     if isinstance(msg, AIMessage) and "that's it for today" in msg.content.lower():
         interview_ended = True
         break
 
-if interview_ended and not st.session_state.state.get("evaluation_result"):
-    st.warning("Interview has ended. Click the button below to generate evaluation and report.")
-    if st.button("Generate Evaluation and Report"):
-        st.info("Generating evaluation and report... This may take a moment.")
+# Chat input at bottom (only visible if interview is active)
+if not interview_ended:
+    user_input = st.chat_input("Enter your response...")
+    if user_input:
+        # Add candidate message
+        st.session_state.state["messages"].append(HumanMessage(content=user_input))
         
-        try:
-            # Create a state with empty evaluation_result to trigger the evaluator
-            current_state = AgentState(
-                mode=st.session_state.state["mode"],
-                num_of_q=st.session_state.state["num_of_q"],
-                num_of_follow_up=st.session_state.state["num_of_follow_up"],
-                position=st.session_state.state["position"],
-                company_name=st.session_state.state["company_name"],
-                messages=st.session_state.state["messages"],
-                evaluation_result="",  # Empty to trigger evaluation
-                report="",  # Empty to trigger report generation
-                pdf_path=None,
-                resume_path=st.session_state.state.get("resume_path"),
-                questions_path=st.session_state.state.get("questions_path")
-            )
-            
-            # First, run the evaluator with retry logic
-            with st.spinner("Generating evaluation..."):
-                from src.dynamic_workflow import evaluator
-                max_retries = 3
-                retry_count = 0
-                
-                while retry_count < max_retries:
-                    try:
-                        # Add a human message to avoid system-prompt-only issues
-                        if not any(isinstance(m, HumanMessage) for m in current_state["messages"]):
-                            current_state["messages"].append(HumanMessage(content="Please evaluate the interview."))
-                        
-                        eval_result = evaluator(current_state)
-                        st.session_state.state["evaluation_result"] = eval_result["evaluation_result"]
-                        break
-                    except Exception as e:
-                        retry_count += 1
-                        if retry_count >= max_retries:
-                            st.error(f"Failed to generate evaluation after {max_retries} attempts: {str(e)}")
-                            raise
-                        st.warning(f"Retry {retry_count}/{max_retries}: {str(e)}")
-                        import time
-                        time.sleep(2)  # Wait before retrying
-            
-            # Then, run the report writer with retry logic
-            with st.spinner("Generating report..."):
-                from src.dynamic_workflow import report_writer
-                current_state["evaluation_result"] = st.session_state.state["evaluation_result"]
-                
-                retry_count = 0
-                while retry_count < max_retries:
-                    try:
-                        report_result = report_writer(current_state)
-                        st.session_state.state["report"] = report_result["report"]
-                        break
-                    except Exception as e:
-                        retry_count += 1
-                        if retry_count >= max_retries:
-                            st.error(f"Failed to generate report after {max_retries} attempts: {str(e)}")
-                            raise
-                        st.warning(f"Retry {retry_count}/{max_retries}: {str(e)}")
-                        import time
-                        time.sleep(2)  # Wait before retrying
-            
-            # Finally, generate the PDF
-            with st.spinner("Generating PDF..."):
-                from src.dynamic_workflow import pdf_generator_node
-                current_state["report"] = st.session_state.state["report"]
-                pdf_result = pdf_generator_node(current_state)
-                st.session_state.state["pdf_path"] = pdf_result["pdf_path"]
-            
-            st.success("Evaluation and report generated successfully!")
-            st.experimental_rerun()
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
-            import traceback
-            st.error(traceback.format_exc())
+        # Prepare state for execution
+        current_state = AgentState(
+            mode=st.session_state.state["mode"],
+            num_of_q=st.session_state.state["num_of_q"],
+            num_of_follow_up=st.session_state.state["num_of_follow_up"],
+            position=st.session_state.state["position"],
+            company_name=st.session_state.state["company_name"],
+            messages=st.session_state.state["messages"],
+            evaluation_result="",
+            report="",
+            pdf_path=st.session_state.state.get("pdf_path"),
+            resume_path=st.session_state.state.get("resume_path"),
+            questions_path=st.session_state.state.get("questions_path")
+        )
+        
+        # Execute workflow
+        with st.spinner("AI Recruiter is processing..."):
+            try:
+                result = workflow.invoke(current_state)
+                st.session_state.state["messages"] = result["messages"]
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error executing recruiter response: {str(e)}")
 
-# --- Display Evaluation ---
-if st.session_state.state.get("evaluation_result"):
-    st.subheader("Evaluation Result")
-    st.markdown(st.session_state.state["evaluation_result"])
+# Post-Interview: Evaluation & Report Actions
+if interview_ended:
+    st.markdown("---")
+    if not st.session_state.state.get("evaluation_result"):
+        st.warning("⚠️ The interview has ended. Please generate the evaluation and report below.")
+        if st.button("Generate Candidate Evaluation & HR Report"):
+            with st.status("Analyzing responses & creating reports...", expanded=True) as status:
+                try:
+                    # Run Evaluator Node
+                    status.update(label="Step 1: Running AI Evaluator...", state="running")
+                    from src.dynamic_workflow import evaluator
+                    eval_state = AgentState(
+                        mode=st.session_state.state["mode"],
+                        num_of_q=st.session_state.state["num_of_q"],
+                        num_of_follow_up=st.session_state.state["num_of_follow_up"],
+                        position=st.session_state.state["position"],
+                        company_name=st.session_state.state["company_name"],
+                        messages=st.session_state.state["messages"],
+                        evaluation_result="",
+                        report="",
+                        pdf_path=None,
+                        resume_path=st.session_state.state.get("resume_path"),
+                        questions_path=st.session_state.state.get("questions_path")
+                    )
+                    eval_res = evaluator(eval_state)
+                    st.session_state.state["evaluation_result"] = eval_res["evaluation_result"]
+                    
+                    # Run Report Writer Node
+                    status.update(label="Step 2: Writing HR Report...", state="running")
+                    from src.dynamic_workflow import report_writer
+                    eval_state["evaluation_result"] = eval_res["evaluation_result"]
+                    rep_res = report_writer(eval_state)
+                    st.session_state.state["report"] = rep_res["report"]
+                    
+                    # Run PDF Generator Node
+                    status.update(label="Step 3: Compiling PDF Report...", state="running")
+                    from src.dynamic_workflow import pdf_generator_node
+                    eval_state["report"] = rep_res["report"]
+                    pdf_res = pdf_generator_node(eval_state)
+                    st.session_state.state["pdf_path"] = pdf_res["pdf_path"]
+                    
+                    status.update(label="Reports ready!", state="complete")
+                    st.success("Candidate assessment generated successfully!")
+                    st.rerun()
+                except Exception as e:
+                    status.update(label="Failed to generate reports", state="error")
+                    st.error(f"Error during report compilation: {str(e)}")
+                    
+    # Render Evaluation Results
+    if st.session_state.state.get("evaluation_result"):
+        with st.expander("📊 Candidate Evaluation Details", expanded=True):
+            st.markdown(st.session_state.state["evaluation_result"])
+            
+    # Render HR Report
+    if st.session_state.state.get("report"):
+        with st.expander("📋 HR Report Summary", expanded=True):
+            st.markdown(st.session_state.state["report"])
+            
+            # Download Button
+            pdf_path = st.session_state.state.get("pdf_path")
+            if pdf_path and os.path.exists(pdf_path):
+                with open(pdf_path, "rb") as f:
+                    st.download_button(
+                        label="📥 Download Assessment PDF",
+                        data=f,
+                        file_name=os.path.basename(pdf_path),
+                        mime="application/pdf"
+                    )
 
-# --- Display Report and PDF Download ---
-if st.session_state.state.get("report"):
-    st.subheader("HR Report")
-    st.markdown(st.session_state.state["report"])
-    
-    # Display PDF download button if PDF path is available
-    if st.session_state.state.get("pdf_path") and os.path.exists(st.session_state.state["pdf_path"]):
-        with open(st.session_state.state["pdf_path"], "rb") as f:
-            st.download_button(
-                "Download PDF Report", 
-                f, 
-                file_name=os.path.basename(st.session_state.state["pdf_path"])
-            )
-
-# --- Display App State ---
+# Sidebar Debugger & Footer
 st.sidebar.markdown("---")
 display_app_state()
 
-# --- Footer ---
 st.markdown("---")
 st.markdown("""
-**Talent Talk** | Revolutionizing technical interviews with AI
-
-**Powered by:**
-- **LangGraph** - AI Agent
-- **Google Generative AI** - Language Model
-- **Streamlit** - Web Interface
-""")
+<div style="text-align: center; color: #6B7280; font-size: 13px;">
+    <strong>Talent Talk</strong> | Powered by LangGraph, Gemini & Streamlit Cloud
+</div>
+""", unsafe_allow_html=True)
